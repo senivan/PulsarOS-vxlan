@@ -8,12 +8,14 @@ pkg_check_modules(DPDK REQUIRED libdpdk)
 
 add_library(vxlan-dpdk STATIC
   src/arp.c
+  src/config.c
   src/dpdk_port.c
   src/neigh_t.c
 )
 
 target_include_directories(vxlan-dpdk PUBLIC
   include
+  third_party/jsmn
   ${DPDK_INCLUDE_DIRS}
 )
 

@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "dataplane": {
+    "lcores": "0-1",
+    "mbufs": 8192,
+    "mbuf_cache": 256,
+    "rx_desc": 1024,
+    "tx_desc": 1024
+  },
+  "ports": [
+    {
+      "name": "underlay0",
+      "role": "underlay",
+      "pmd": "af_packet",
+      "iface": "eth-underlay",
+      "ip": "172.16.100.1/30"
+    },
+    {
+      "name": "access-red",
+      "role": "access",
+      "pmd": "af_packet",
+      "iface": "eth-left"
+    },
+    {
+      "name": "access-blue",
+      "role": "access",
+      "pmd": "af_packet",
+      "iface": "eth-right"
+    }
+  ],
+  "vxlan": {
+    "udp_port": 4789,
+    "controlplane": "static-and-runtime",
+    "segments": [
+      {
+        "name": "red",
+        "vni": 100,
+        "underlay_port": "underlay0",
+        "access_ports": ["access-red"],
+        "peers": [
+          { "ip": "172.16.100.2" }
+        ]
+      },
+      {
+        "name": "blue",
+        "vni": 200,
+        "underlay_port": "underlay0",
+        "access_ports": ["access-blue"],
+        "peers": [
+          { "ip": "172.16.100.2" },
+          { "ip": "172.16.100.3" }
+        ]
+      }
+    ]
+  }
+}
