@@ -23,6 +23,14 @@ target_link_libraries(vxlan-dpdk PUBLIC
   ${DPDK_LIBRARIES}
 )
 
-target_compile_options(vxlan-dpdk PRIVATE
+target_compile_options(vxlan-dpdk PUBLIC
   ${DPDK_CFLAGS_OTHER}
+)
+
+add_executable(vxlan-dp
+  src/main.c
+)
+
+target_link_libraries(vxlan-dp PRIVATE
+  vxlan-dpdk
 )
