@@ -21,12 +21,6 @@ enum app_controlplane_mode {
     CONTROLPLANE_STATIC_AND_RUNTIME
 };
 
-struct interface {
-    char name[IF_NAME_MAX_LEN];
-    char pcie_addr[APP_PCI_ADDR_MAX_LEN];
-    uint32_t ip_addr;
-};
-
 struct app_port_config {
     char name[APP_NAME_MAX_LEN];
     enum app_port_role role;
@@ -50,11 +44,11 @@ struct app_vxlan_segment {
     uint16_t access_port_count;
     struct app_vxlan_peer peers[APP_MAX_PEERS];
     uint16_t peer_count;
+    uint8_t learning;
+    uint8_t flooding;
 };
 
 struct app_config {
-    enum app_pmd pmd;
-    struct interface underlay;
     uint64_t lcore_mask;
     char lcores[APP_LCORES_MAX_LEN];
     int socket_id;

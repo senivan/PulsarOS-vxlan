@@ -1,42 +1,28 @@
+#include <signal.h>
 #include <stdio.h>
-#include <string.h>
-
-#include "arp.h"
 #include "config.h"
-#include "dpdk_port.h"
+#include "runtime.h"
 
-static void usage(const char *progname)
+static struct app_runtime *active_runtime;
+
+static void request_stop(int signo)
 {
-    fprintf(stderr, "usage: %s <config.json>\n", progname);
+    (void)signo;
+    if (active_runtime) active_runtime->stop = 1;
 }
 
 int main(int argc, char **argv)
 {
-    struct app_config conf;
-    struct app_runtime rt;
-    char err[256];
-    uint16_t i;
-
-    if (argc != 2) {
-        usage(argv[0]);
-        return 2;
-    }
-
+    if (argc != 2) { fprintf(stderr, "usage: %s <config.json>\n", argv[0]); return 2; }
+    struct app_config conf; struct app_runtime rt; char err[256];
     if (app_config_load_json(argv[1], &conf, err, sizeof(err)) < 0) {
-        fprintf(stderr, "failed to load config: %s\n", err);
-        return 1;
+        fprintf(stderr, "failed to load config: %s\n", err); return 1;
     }
-
-    if (app_init(argv[0], &conf, &rt) < 0) {
-        return 1;
-    }
-
-    for (i = 0; i < conf.port_count; i++) {
-        if (conf.ports[i].role == PORT_UNDERLAY && rt.ports[i].ip_be != 0) {
-            arp_send_gratuitous(&rt.ports[i]);
-        }
-    }
-
-    printf("initialized %u DPDK ports\n", rt.port_count);
-    return 0;
+    if (app_init(argv[0], &conf, &rt) < 0) { fprintf(stderr, "dataplane initialization failed\n"); return 1; }
+    active_runtime = &rt;
+    signal(SIGINT, request_stop); signal(SIGTERM, request_stop);
+    printf("initialized %u DPDK ports; entering forwarding loop\n", rt.port_count);
+    int rc = app_run(&rt);
+    app_dump_stats(&rt); app_fini(&rt); active_runtime = NULL;
+    return rc ? 1 : 0;
 }
