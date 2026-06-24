@@ -11,6 +11,22 @@ const struct bridge_domain *runtime_bd(const struct app_runtime *rt, uint16_t bd
     return bd_id && bd_id <= rt->bd_count ? &rt->bds[bd_id] : NULL;
 }
 
+int runtime_vni_insert(struct app_runtime *rt, uint32_t vni, uint16_t bd_id)
+{
+    uint32_t start = hash32(vni) & (VNI_TABLE_SIZE - 1);
+    for (uint32_t i = 0; i < VNI_TABLE_SIZE; i++) {
+        struct vni_entry *e = &rt->vni_table[(start + i) & (VNI_TABLE_SIZE - 1)];
+        if (!e->in_use) {
+            e->vni = vni;
+            e->bd_id = bd_id;
+            e->in_use = 1;
+            return 0;
+        }
+        if (e->vni == vni) return -1;
+    }
+    return -1;
+}
+
 const struct bridge_domain *runtime_vni_lookup(const struct app_runtime *rt, uint32_t vni)
 {
     uint32_t start = hash32(vni) & (VNI_TABLE_SIZE - 1);

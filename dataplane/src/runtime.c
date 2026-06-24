@@ -5,17 +5,6 @@
 #include "dpdk_port.h"
 #include "vxlan.h"
 
-static int vni_insert(struct app_runtime *rt, uint32_t vni, uint16_t bd_id)
-{
-    uint32_t h = vni; h ^= h >> 16; h *= 0x7feb352dU; h ^= h >> 15;
-    uint32_t start = h & (VNI_TABLE_SIZE - 1);
-    for (uint32_t i = 0; i < VNI_TABLE_SIZE; i++) {
-        struct vni_entry *e = &rt->vni_table[(start + i) & (VNI_TABLE_SIZE - 1)];
-        if (!e->in_use) { e->vni = vni; e->bd_id = bd_id; e->in_use = 1; return 0; }
-    }
-    return -1;
-}
-
 int app_init(const char *progname, const struct app_config *conf, struct app_runtime *rt)
 {
     memset(rt, 0, sizeof(*rt)); rt->vxlan_udp_port = conf->vxlan_udp_port;
@@ -32,7 +21,7 @@ int app_init(const char *progname, const struct app_config *conf, struct app_run
             bd->access_ports[p] = port_id; rt->port_bindings[port_id].bd_id = bd->bd_id;
         }
         for (uint16_t p = 0; p < s->peer_count; p++) bd->remote_vteps[p] = s->peers[p].ip_be;
-        if (vni_insert(rt, bd->vni, bd->bd_id) < 0) { app_fini(rt); return -1; }
+        if (runtime_vni_insert(rt, bd->vni, bd->bd_id) < 0) { app_fini(rt); return -1; }
     }
     if (graph_init(rt) < 0) { app_fini(rt); return -1; }
     return 0;

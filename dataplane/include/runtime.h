@@ -44,5 +44,6 @@ void app_fini(struct app_runtime *rt);
 void app_dump_stats(const struct app_runtime *rt);
 
 struct port_state *runtime_port(struct app_runtime *rt, uint16_t port_id);
+int runtime_vni_insert(struct app_runtime *rt, uint32_t vni, uint16_t bd_id);
 
 #endif
