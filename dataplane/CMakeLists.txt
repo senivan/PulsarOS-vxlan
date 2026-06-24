@@ -7,10 +7,19 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(DPDK REQUIRED libdpdk)
 
 add_library(vxlan-dpdk STATIC
-  src/arp.c
   src/config.c
   src/dpdk_port.c
-  src/neigh_t.c
+  src/fdb.c
+  src/graph.c
+  src/nodes/drop.c
+  src/nodes/encap.c
+  src/nodes/ingress.c
+  src/nodes/l2.c
+  src/nodes/register.c
+  src/nodes/tx.c
+  src/runtime.c
+  src/runtime_tables.c
+  src/vxlan.c
 )
 
 target_include_directories(vxlan-dpdk PUBLIC
@@ -25,6 +34,7 @@ target_link_libraries(vxlan-dpdk PUBLIC
 
 target_compile_options(vxlan-dpdk PUBLIC
   ${DPDK_CFLAGS_OTHER}
+  -Wall -Wextra -Wpedantic
 )
 
 add_executable(vxlan-dp

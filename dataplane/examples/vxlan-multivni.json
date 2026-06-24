@@ -13,7 +13,7 @@
       "role": "underlay",
       "pmd": "af_packet",
       "iface": "eth-underlay",
-      "ip": "172.16.100.1/30"
+      "ip": "172.16.100.1/24"
     },
     {
       "name": "access-red",
@@ -30,13 +30,15 @@
   ],
   "vxlan": {
     "udp_port": 4789,
-    "controlplane": "static-and-runtime",
+    "controlplane": "static",
     "segments": [
       {
         "name": "red",
         "vni": 100,
         "underlay_port": "underlay0",
         "access_ports": ["access-red"],
+        "learning": true,
+        "flooding": true,
         "peers": [
           { "ip": "172.16.100.2" }
         ]
@@ -46,6 +48,8 @@
         "vni": 200,
         "underlay_port": "underlay0",
         "access_ports": ["access-blue"],
+        "learning": true,
+        "flooding": true,
         "peers": [
           { "ip": "172.16.100.2" },
           { "ip": "172.16.100.3" }

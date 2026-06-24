@@ -25,7 +25,6 @@ static void set_err(char *err, size_t err_len, const char *fmt, ...)
 void app_config_defaults(struct app_config *conf)
 {
     memset(conf, 0, sizeof(*conf));
-    conf->pmd = PMD_AFPKT;
     conf->lcore_mask = 0x3;
     snprintf(conf->lcores, sizeof(conf->lcores), "0-1");
     conf->socket_id = -1;
@@ -511,6 +510,8 @@ static int parse_segment(const char *json,
     segment = &conf->segments[conf->segment_count];
     memset(segment, 0, sizeof(*segment));
     segment->underlay_port = UINT16_MAX;
+    segment->learning = 1;
+    segment->flooding = 1;
 
     value = object_get(json, tokens, object_index, "name");
     if (value < 0 || token_copy(json, &tokens[value], segment->name, sizeof(segment->name)) < 0) {
@@ -528,6 +529,12 @@ static int parse_segment(const char *json,
         return -1;
     }
     segment->vni = u32;
+    for (uint16_t si = 0; si < conf->segment_count; si++) {
+        if (conf->segments[si].vni == segment->vni) {
+            set_err(err, err_len, "duplicate VNI: %u", segment->vni);
+            return -1;
+        }
+    }
 
     value = object_get(json, tokens, object_index, "underlay_port");
     if (value < 0 || token_copy(json, &tokens[value], name, sizeof(name)) < 0) {
@@ -562,8 +569,47 @@ static int parse_segment(const char *json,
             set_err(err, err_len, "segment %s references invalid access_port %s", segment->name, name);
             return -1;
         }
+        for (uint16_t si = 0; si < conf->segment_count; si++) {
+            const struct app_vxlan_segment *other = &conf->segments[si];
+            for (uint16_t ap = 0; ap < other->access_port_count; ap++) {
+                if (other->access_ports[ap] == (uint16_t)port_index) {
+                    set_err(err, err_len, "access port %s belongs to multiple segments", name);
+                    return -1;
+                }
+            }
+        }
+        for (uint16_t ap = 0; ap < segment->access_port_count; ap++) {
+            if (segment->access_ports[ap] == (uint16_t)port_index) {
+                set_err(err, err_len, "segment %s repeats access port %s", segment->name, name);
+                return -1;
+            }
+        }
         segment->access_ports[segment->access_port_count++] = (uint16_t)port_index;
         cursor = skip_token(tokens, cursor);
+    }
+
+    value = object_get(json, tokens, object_index, "learning");
+    if (value >= 0) {
+        if (token_streq(json, &tokens[value], "true")) segment->learning = 1;
+        else if (token_streq(json, &tokens[value], "false")) segment->learning = 0;
+        else if (tokens[value].type == JSMN_PRIMITIVE) {
+            size_t len = (size_t)(tokens[value].end - tokens[value].start);
+            const char *s = json + tokens[value].start;
+            if (len == 4 && memcmp(s, "true", 4) == 0) segment->learning = 1;
+            else if (len == 5 && memcmp(s, "false", 5) == 0) segment->learning = 0;
+            else { set_err(err, err_len, "segment %s learning must be true/false", segment->name); return -1; }
+        } else { set_err(err, err_len, "segment %s learning must be true/false", segment->name); return -1; }
+    }
+    value = object_get(json, tokens, object_index, "flooding");
+    if (value >= 0) {
+        if (tokens[value].type != JSMN_PRIMITIVE) {
+            set_err(err, err_len, "segment %s flooding must be true/false", segment->name); return -1;
+        }
+        size_t len = (size_t)(tokens[value].end - tokens[value].start);
+        const char *s = json + tokens[value].start;
+        if (len == 4 && memcmp(s, "true", 4) == 0) segment->flooding = 1;
+        else if (len == 5 && memcmp(s, "false", 5) == 0) segment->flooding = 0;
+        else { set_err(err, err_len, "segment %s flooding must be true/false", segment->name); return -1; }
     }
 
     value = object_get(json, tokens, object_index, "peers");
@@ -620,7 +666,7 @@ static int parse_vxlan(const char *json,
     }
 
     value = object_get(json, tokens, object_index, "segments");
-    if (value < 0 || tokens[value].type != JSMN_ARRAY) {
+    if (value < 0 || tokens[value].type != JSMN_ARRAY || tokens[value].size == 0) {
         set_err(err, err_len, "vxlan.segments must be an array");
         return -1;
     }
@@ -632,24 +678,6 @@ static int parse_vxlan(const char *json,
     }
 
     return 0;
-}
-
-static int apply_legacy_underlay(struct app_config *conf, char *err, size_t err_len)
-{
-    uint16_t i;
-
-    for (i = 0; i < conf->port_count; i++) {
-        struct app_port_config *port = &conf->ports[i];
-        if (port->role != PORT_UNDERLAY) continue;
-        conf->pmd = port->pmd;
-        snprintf(conf->underlay.name, sizeof(conf->underlay.name), "%s", port->iface);
-        snprintf(conf->underlay.pcie_addr, sizeof(conf->underlay.pcie_addr), "%s", port->pci_addr);
-        conf->underlay.ip_addr = port->ip_be;
-        return 0;
-    }
-
-    set_err(err, err_len, "at least one underlay port is required");
-    return -1;
 }
 
 static char *read_file(const char *path, size_t *len_out, char *err, size_t err_len)
@@ -752,7 +780,31 @@ int app_config_load_json(const char *path,
     }
     if (parse_vxlan(json, tokens, value, conf, err, err_len) < 0) goto out;
 
-    if (apply_legacy_underlay(conf, err, err_len) < 0) goto out;
+    if (conf->controlplane != CONTROLPLANE_STATIC) {
+        set_err(err, err_len, "only static controlplane mode is implemented");
+        goto out;
+    }
+
+    for (uint16_t si = 0; si < conf->segment_count; si++) {
+        const struct app_vxlan_segment *seg = &conf->segments[si];
+        const struct app_port_config *underlay = &conf->ports[seg->underlay_port];
+        uint32_t local = ntohl(underlay->ip_be);
+        uint32_t mask = underlay->prefix_len == 0 ? 0 : UINT32_MAX << (32 - underlay->prefix_len);
+        for (uint16_t pi = 0; pi < seg->peer_count; pi++) {
+            uint32_t peer = ntohl(seg->peers[pi].ip_be);
+            if ((peer & mask) != (local & mask) || peer == local || underlay->prefix_len == 32 ||
+                (underlay->prefix_len <= 30 && (peer == (local & mask) || peer == ((local & mask) | ~mask)))) {
+                set_err(err, err_len, "segment %s peer is not a usable on-link address", seg->name);
+                goto out;
+            }
+            for (uint16_t pj = 0; pj < pi; pj++) {
+                if (seg->peers[pj].ip_be == seg->peers[pi].ip_be) {
+                    set_err(err, err_len, "segment %s repeats a peer", seg->name);
+                    goto out;
+                }
+            }
+        }
+    }
 
     rc = 0;
 
